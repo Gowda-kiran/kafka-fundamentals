@@ -1,0 +1,58 @@
+# Schema Registration CI/CD Pipeline
+# Triggers when schema files change and get merged to main
+
+name: Register Schemas
+
+# When to run this pipeline
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'schemas/**'  # Only run when schema files change
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  validate-and-register:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Get the code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Setup Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      # Step 4: Validate schema files are valid JSON
+      - name: Validate schema JSON syntax
+        run: |
+          echo "Validating schema files..."
+          for file in schemas/**/*.avsc; do
+            echo "Checking $file"
+            python -c "import json; json.load(open('$file'))"
+          done
+          echo "All schemas are valid JSON!"
+
+      # Step 5: Register schemas to Schema Registry
+      # In production, SCHEMA_REGISTRY_URL would be a secret
+      - name: Register schemas
+        env:
+          SCHEMA_REGISTRY_URL: ${{ secrets.SCHEMA_REGISTRY_URL }}
+        run: |
+          python scripts/register_schemas.py
+
+# NOTE: For this to work in production, you need:
+# 1. Schema Registry accessible from GitHub Actions (cloud-hosted or VPN)
+# 2. Add SCHEMA_REGISTRY_URL as a GitHub secret
+#    Settings -> Secrets -> Actions -> New repository secret

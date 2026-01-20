@@ -1,0 +1,15 @@
+# Kafka Python Client (pure Python, no C dependencies)
+kafka-python>=2.0.2
+
+# Confluent Kafka with Avro + Schema Registry support
+confluent-kafka[avro]>=2.3.0
+
+# For JSON schema validation (optional)
+jsonschema==4.20.0
+
+# Environment configuration
+python-dotenv==1.0.0
+
+# Avro serialization (pure Python)
+avro-python3>=1.10.2
+
