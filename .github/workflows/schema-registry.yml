@@ -1,58 +1,89 @@
-# Schema Registration CI/CD Pipeline
-# Triggers when schema files change and get merged to main
+# Schema Validation & Registration CI/CD Pipeline
+# Validates schemas on every PR, registers on merge to main
 
-name: Register Schemas
+name: Schema CI/CD
 
-# When to run this pipeline
 on:
   push:
     branches:
       - main
     paths:
-      - 'schemas/**'  # Only run when schema files change
-
-  # Allow manual trigger from GitHub UI
+      - 'schemas/**'
+  pull_request:
+    paths:
+      - 'schemas/**'
   workflow_dispatch:
 
 jobs:
-  validate-and-register:
+  validate:
+    name: Validate Schemas
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Get the code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Setup Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # Step 3: Install dependencies
-      - name: Install dependencies
-        run: |
-          pip install requests
-
-      # Step 4: Validate schema files are valid JSON
+      # Validate JSON syntax
       - name: Validate schema JSON syntax
         run: |
-          echo "Validating schema files..."
+          echo "=== Validating Schema Files ==="
           for file in schemas/**/*.avsc; do
-            echo "Checking $file"
-            python -c "import json; json.load(open('$file'))"
+            echo "Checking: $file"
+            python -c "import json; json.load(open('$file'))" && echo "  ✓ Valid JSON"
           done
-          echo "All schemas are valid JSON!"
+          echo "=== All schemas are valid! ==="
 
-      # Step 5: Register schemas to Schema Registry
-      # In production, SCHEMA_REGISTRY_URL would be a secret
+      # Validate Avro schema structure
+      - name: Validate Avro schema structure
+        run: |
+          pip install avro-python3
+          python -c "
+          import json
+          import avro.schema
+          from pathlib import Path
+
+          for schema_file in Path('schemas').rglob('*.avsc'):
+              print(f'Validating Avro: {schema_file}')
+              with open(schema_file) as f:
+                  schema_json = f.read()
+              avro.schema.parse(schema_json)
+              print(f'  ✓ Valid Avro schema')
+          print('=== All Avro schemas are valid! ===')
+          "
+
+  # Registration job - only runs on main branch merge
+  # Skipped for now since localhost isn't reachable from GitHub Actions
+  # In production, use Confluent Cloud or a publicly accessible Schema Registry
+  register:
+    name: Register Schemas
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
       - name: Register schemas
         env:
           SCHEMA_REGISTRY_URL: ${{ secrets.SCHEMA_REGISTRY_URL }}
         run: |
+          if [ -z "$SCHEMA_REGISTRY_URL" ]; then
+            echo "⚠️  SCHEMA_REGISTRY_URL not set - skipping registration"
+            echo "In production, set this secret to your Schema Registry URL"
+            exit 0
+          fi
           python scripts/register_schemas.py
-
-# NOTE: For this to work in production, you need:
-# 1. Schema Registry accessible from GitHub Actions (cloud-hosted or VPN)
-# 2. Add SCHEMA_REGISTRY_URL as a GitHub secret
-#    Settings -> Secrets -> Actions -> New repository secret
